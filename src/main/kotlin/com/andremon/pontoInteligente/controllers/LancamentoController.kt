@@ -8,13 +8,13 @@ import com.andremon.pontoInteligente.enums.TipoEnum
 import com.andremon.pontoInteligente.services.FuncionarioService
 import com.andremon.pontoInteligente.services.LancamentoService
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Sort
 import org.springframework.http.ResponseEntity
 import org.springframework.validation.BindingResult
 import org.springframework.validation.ObjectError
-import org.springframework.web.bind.annotation.PostMapping
-import org.springframework.web.bind.annotation.RequestBody
-import org.springframework.web.bind.annotation.RequestMapping
-import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.bind.annotation.*
 import java.text.SimpleDateFormat
 import java.util.*
 import javax.validation.Valid
@@ -46,22 +46,87 @@ class LancamentoController(val lancamentoService: LancamentoService,
         return ResponseEntity.ok(response)
     }
 
+    @GetMapping(value = ["/{id}"])
+    fun listarPorId(@PathVariable("id") id: String): ResponseEntity<Response<LancamentoDto>> {
+        val response: Response<LancamentoDto> = Response<LancamentoDto>()
+        val lancamento: Optional<Lancamento> = lancamentoService.buscarPorId(id)
+
+        if (lancamento.isEmpty) {
+            response.erros.add("Lançamento não encontrado para o id $id")
+            return ResponseEntity.badRequest().body(response)
+        }
+
+        response.data = converterLancamentoDto(lancamento.orElse(null))
+        return ResponseEntity.ok(response)
+    }
+
+    @PutMapping(value = ["/{id}"])
+    fun atualizar(@PathVariable("id") id: String, @Valid @RequestBody lancamentoDto: LancamentoDto,
+                  result: BindingResult): ResponseEntity<Response<LancamentoDto>> {
+        val response: Response<LancamentoDto> = Response<LancamentoDto>()
+        validaFuncionario(lancamentoDto, result)
+        lancamentoDto.id = id
+        val lancamento: Lancamento = converterDtoParaLancamento(lancamentoDto, result)
+
+        if (result.hasErrors()) {
+            for (erro in result.allErrors) erro.defaultMessage?.let { mensagemErro -> response.erros.add(mensagemErro) }
+            return ResponseEntity.badRequest().body(response)
+        }
+
+        lancamentoService.persistir(lancamento)
+        response.data = converterLancamentoDto(lancamento)
+        return ResponseEntity.ok(response)
+    }
+
+    @DeleteMapping("/{id}")
+    fun remover(@PathVariable("id") id: String): ResponseEntity<Response<String>> {
+        val response: Response<String> = Response<String>()
+        val lancamento: Optional<Lancamento> = lancamentoService.buscarPorId(id)
+
+        if (lancamento.isEmpty) {
+            response.erros.add("Errro ao remover lancamento. Registro não encontrado para o id $id")
+            return ResponseEntity.badRequest().body(response)
+        }
+
+        lancamentoService.remover(id)
+        return ResponseEntity.ok(response)
+    }
+
+    @GetMapping("/funcionario/{funcionarioId}")
+    fun listarPorFuncionarioId(@PathVariable("funcionarioId") funcionarioId: String,
+                               @RequestParam(value = "pag", defaultValue = "0") pag: Int,
+                               @RequestParam(value = "ord", defaultValue = "id") ord: String,
+                               @RequestParam(value = "dir", defaultValue = "DESC") dir: String):
+            ResponseEntity<Response<Page<LancamentoDto>>> {
+
+        val response: Response<Page<LancamentoDto>> = Response<Page<LancamentoDto>>()
+
+        val pageRequest: PageRequest = PageRequest.of(pag, qtdPorPagina, Sort.Direction.valueOf(dir), ord)
+
+        val lancamentos: Page<Lancamento> = lancamentoService.buscarPorFuncionarioId(funcionarioId, pageRequest)
+
+        val lancamentosDto: Page<LancamentoDto> = lancamentos.map { lancamento -> converterLancamentoDto(lancamento) }
+
+        response.data = lancamentosDto
+        return ResponseEntity.ok(response)
+    }
+
     private fun validaFuncionario(lancamentoDto: LancamentoDto, result: BindingResult) {
         if (lancamentoDto.funcionarioId == null) {
             result.addError(ObjectError("funcionario", "Funcionário não informado."))
             return
         }
 
-        val funcionario: Optional<Funcionario>? = funcionarioService.buscarPorId(lancamentoDto.funcionarioId)
-        if (funcionario == null) {
+        val funcionario: Optional<Funcionario> = funcionarioService.buscarPorId(lancamentoDto.funcionarioId)
+        if (funcionario.isEmpty) {
             result.addError(ObjectError("funcionario", "Funcionário não encontrado. ID inexistente."))
         }
     }
 
     private fun converterDtoParaLancamento(lancamentoDto: LancamentoDto, result: BindingResult): Lancamento {
         if (lancamentoDto.id != null) {
-            val lanc: Optional<Lancamento>? = lancamentoService.buscarPorId(lancamentoDto.id)
-            if (lanc == null) result.addError(ObjectError("lancamento", "Lancamento não encontrado"))
+            val lanc: Optional<Lancamento> = lancamentoService.buscarPorId(lancamentoDto.id!!)
+            if (lanc.isEmpty) result.addError(ObjectError("lancamento", "Lancamento não encontrado"))
 
         }
         return Lancamento(dateFormat.parse(lancamentoDto.data), TipoEnum.valueOf(lancamentoDto.tipo!!),

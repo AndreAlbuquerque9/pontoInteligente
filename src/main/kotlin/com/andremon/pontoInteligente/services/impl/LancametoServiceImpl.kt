@@ -13,7 +13,7 @@ class LancametoServiceImpl(val lancamentoRespository: LancamentoRepository) : La
     override fun buscarPorFuncionarioId(funcionarioId: String, pageRequest: PageRequest): Page<Lancamento> =
             lancamentoRespository.findByFuncionarioId(funcionarioId, pageRequest)
 
-    override fun buscarPorId(id: String): Optional<Lancamento>? =
+    override fun buscarPorId(id: String): Optional<Lancamento> =
             lancamentoRespository.findById(id)
 
     override fun persistir(lancamento: Lancamento): Lancamento =
